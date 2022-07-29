@@ -4,12 +4,16 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon index.js"
   },
   "repository": {
     "type": "git",
     "url": "share_signaling"
   },
   "author": "Kalap",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "mongodb": "^4.8.1"
+  }
 }

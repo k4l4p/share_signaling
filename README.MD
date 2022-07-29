@@ -2,6 +2,7 @@
 
 Originally did not plan to implement one
 
-- [ ] mongoDB
-- [ ] pair up
-- [ ] ICE candidate exchange
+- [ ] ~~mongoDB~~
+- [x] JSON pairup
+- [ ] ~~pair up~~
+- [x] ICE candidate exchange
