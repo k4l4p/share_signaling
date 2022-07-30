@@ -32,50 +32,92 @@ const write = () => {
 
 wss.on('connection', ws => {
    console.log('Client connected')
-   ws.on('message', (data)=>{
+   ws.on('message', (data) => {
       let temp = JSON.parse(data)
-      switch (temp.phase){
-         case 'req_key':
-            let key = Math.floor(Math.random() * (899) + 100)
-            ws.key = key
-            read()
-            globalData[key] = {
-               in: null,
-               out: null
-            }
-            write()
-            ws.send(JSON.stringify({phase: 'req_key',key: key}))
-            console.log('key: '+key)
-            break
+      // console.log(temp)
+      switch (temp.side) {
          case 'start':
-            read()
-            globalData[ws.key].in = temp.ice
-            write()
-            break
-         case 'recv':
-            read()
-            if (temp?.ice) {
-               globalData[temp.key].out = temp.ice
+            if (temp.action === 'req_key') {
+               let key = Math.floor(Math.random() * (899) + 100)
+               ws.key = key
+               read()
+               globalData[key] = {
+                  in: null,
+                  out: null
+               }
+               write()
+               ws.send(JSON.stringify({ 
+                  side: 'start',
+                  action: 'req_key',
+                  key: key
+               }))
+               console.log('key: ' + key)
+            }
+            if (temp.action === 'send_decr') {
+               read()
+               globalData[ws.key].in = temp.decr
+               write()
+            }
+            if (temp.action === 'send_ice') {
                wss.clients.forEach(c => {
-                  console.log(c.key, temp.key)
-                  if (c?.key === Number.parseInt(temp.key)){
-                     console.log('hi')
+                  if (c?.matchKey === ws.key) {
                      c.send(JSON.stringify({
-                        phase: 'start',
+                        side: 'recv',
+                        action: 'send_ice',
                         ice: temp.ice
                      }))
                   }
                })
-
-
-            }else {
-               let temp_ice = globalData[temp.key].in
-               ws.send(JSON.stringify({
-                  phase: 'recv',
-                  ice: temp_ice
-               }))   
             }
-            
+            break
+         case 'recv':
+            read()
+            if (temp.action === 'send_key'){
+               ws.matchKey = Number.parseInt(temp.key)
+               let temp_decr = globalData[temp.key]?.in
+               if (temp_decr){
+                  ws.send(JSON.stringify({
+                     side: 'recv',
+                     action: 'send_decr',
+                     decr: temp_decr
+                  }))
+               } else {
+                  ws.send(JSON.stringify({
+                     side: 'recv',
+                     action: 'error',
+                     content: 'Wrong ID'
+                  }))
+               }
+               
+            }
+            if (temp.action === 'send_decr'){
+               // save decr to JSON
+               globalData[temp.key].out = temp.decr
+               write()
+               // send recv decr back to start
+               wss.clients.forEach(c => {
+                  console.log(c.key, temp.key)
+                  if (c?.key === Number.parseInt(temp.key)) {
+                     c.send(JSON.stringify({
+                        side: 'start',
+                        action: 'send_decr',
+                        decr: temp.decr
+                     }))
+                  }
+               })
+            }
+            if (temp.action === 'send_ice') {
+               wss.clients.forEach(c => {
+                  if (c?.key === ws.matchKey) {
+                     c.send(JSON.stringify({
+                        side: 'start',
+                        action: 'send_ice',
+                        ice: temp.ice
+                     }))
+                  }
+               })
+            }
+
             break
          case 'close':
             delete globalData[ws.key]
