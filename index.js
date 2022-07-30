@@ -1,7 +1,5 @@
-const e = require('express');
 const express = require('express')
 const SocketServer = require('ws').Server
-const fs = require('fs');
 
 const PORT = 8000
 
@@ -10,72 +8,78 @@ const server = express()
 
 const wss = new SocketServer({ server })
 
-let globalData = {}
-
-const read = () => {
-   let temp = fs.readFileSync(__dirname + "/" + "data.json", { encoding: 'utf8' })
-   globalData = JSON.parse(temp)
-   // fs.readFile(__dirname + "/" + "data.json", 'utf8', function (err, data) {
-   //    globalData = JSON.parse(data)
-   // })
-}
-
-const write = () => {
-   let data = JSON.stringify(globalData)
-   fs.writeFileSync(__dirname + "/" + "data.json", data)
-   // fs.writeFile(__dirname + "/" + "data.json", data, (err)=>{
-   //    if (err) {
-   //       throw err
-   //    }
-   // })
-}
-
 wss.on('connection', ws => {
    console.log('Client connected')
    ws.on('message', (data) => {
       let temp = JSON.parse(data)
-      // console.log(temp)
+      console.log(temp)
       switch (temp.side) {
          case 'start':
             if (temp.action === 'req_key') {
                let key = Math.floor(Math.random() * (899) + 100)
                ws.key = key
-               read()
-               globalData[key] = {
-                  in: null,
-                  out: null
-               }
-               write()
-               ws.send(JSON.stringify({ 
+               ws.ice = []
+               ws.established = false
+               ws.send(JSON.stringify({
                   side: 'start',
                   action: 'req_key',
                   key: key
                }))
-               console.log('key: ' + key)
             }
             if (temp.action === 'send_decr') {
-               read()
-               globalData[ws.key].in = temp.decr
-               write()
+               ws.decr = temp.decr
             }
             if (temp.action === 'send_ice') {
-               wss.clients.forEach(c => {
-                  if (c?.matchKey === ws.key) {
+               if (ws.established) {
+                  wss.clients.forEach(c => {
                      c.send(JSON.stringify({
                         side: 'recv',
                         action: 'send_ice',
                         ice: temp.ice
                      }))
+                  })
+               } else {
+                  ws.ice.push(temp.ice)
+               }
+            }
+            if (temp.action === 'get_ice') {
+               ws.established = true
+               wss.clients.forEach(c => {
+                  if (c?.matchKey === ws.key) {
+                     c.established = true
+                     c?.ice.map((e) => {
+                        ws.send(JSON.stringify({
+                           side: 'start',
+                           action: 'send_ice',
+                           ice: e
+                        }))
+                     })
+                     ws?.ice.map((e)=>{
+                        c.send(JSON.stringify({
+                           side: 'recv',
+                           action: 'send_ice',
+                           ice: e
+                        }))
+                     })
                   }
                })
             }
             break
          case 'recv':
-            read()
-            if (temp.action === 'send_key'){
+            // read()
+            if (temp.action === 'send_key') {
                ws.matchKey = Number.parseInt(temp.key)
-               let temp_decr = globalData[temp.key]?.in
-               if (temp_decr){
+               ws.ice = []
+               ws.established = false
+               // let temp_decr = globalData[temp.key]?.in
+               let temp_decr = null
+               wss.clients.forEach(c => {
+                  console.log(c?.key, temp.key)
+                  if (c?.key === ws.matchKey) {
+                     temp_decr = c.decr
+                  }
+               })
+               if (temp_decr) {
                   ws.send(JSON.stringify({
                      side: 'recv',
                      action: 'send_decr',
@@ -88,16 +92,25 @@ wss.on('connection', ws => {
                      content: 'Wrong ID'
                   }))
                }
-               
+
             }
-            if (temp.action === 'send_decr'){
+            if (temp.action === 'send_decr') {
                // save decr to JSON
-               globalData[temp.key].out = temp.decr
-               write()
-               // send recv decr back to start
+               // globalData[temp.key].out = temp.decr
+               // write()
+               ws.decr = temp.decr
                wss.clients.forEach(c => {
-                  console.log(c.key, temp.key)
                   if (c?.key === Number.parseInt(temp.key)) {
+                     // check if ice packet were stored before connecting to recv
+                     c?.ice.map((e) => {
+                        c.send(JSON.stringify({
+                           side: 'recv',
+                           action: 'send_ice',
+                           ice: e
+                        }))
+                     })
+
+                     // send recv decr back to start
                      c.send(JSON.stringify({
                         side: 'start',
                         action: 'send_decr',
@@ -107,29 +120,29 @@ wss.on('connection', ws => {
                })
             }
             if (temp.action === 'send_ice') {
-               wss.clients.forEach(c => {
-                  if (c?.key === ws.matchKey) {
-                     c.send(JSON.stringify({
-                        side: 'start',
-                        action: 'send_ice',
-                        ice: temp.ice
-                     }))
-                  }
-               })
+               if (ws.established) {
+                  wss.clients.forEach(c => {
+                     if (c?.key === ws.matchKey) {
+                        c.send(JSON.stringify({
+                           side: 'start',
+                           action: 'send_ice',
+                           ice: temp.ice
+                        }))
+                     }
+                  })
+               } else {
+                  ws.ice.push(temp.ice)
+               }
             }
-
             break
          case 'close':
-            delete globalData[ws.key]
+            // delete globalData[ws.key]
             console.log('delete key')
             break
       }
    })
 
    ws.on('close', () => {
-      read()
-      delete globalData[ws.key]
-      write()
       console.log('delete key: ', ws.key)
       console.log('Close connected')
    })
